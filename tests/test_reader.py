@@ -79,9 +79,11 @@ def test_read_binary() -> None:
 
 def test_read_ascii() -> None:
     points, ind = pyvista_stl.read(TEST_FILE_ASCII)
+    assert np.allclose(EXPECTED_POINTS, points)
+    assert np.allclose(EXPECTED_FACES, ind)
 
 
-@pytest.mark.skipif(not PYVISTA_INSTALLED, reason="Requires PyVista")  # type: ignore
+@pytest.mark.skipif(not PYVISTA_INSTALLED, reason="Requires PyVista")
 def test_read_as_mesh() -> None:
     pv_mesh = pv.read(TEST_FILE_BINARY)
 
@@ -101,8 +103,8 @@ def test_entry_point_registered() -> None:
 @pytest.mark.skipif(
     not _HAS_READER_REGISTRY,
     reason="requires pyvista >= 0.48 entry-point hooks",
-)  # type: ignore
-@pytest.mark.parametrize("func", [pyvista_stl.read, pyvista_stl.read_as_mesh])  # type: ignore
+)
+@pytest.mark.parametrize("func", [pyvista_stl.read, pyvista_stl.read_as_mesh])
 def test_read_raises_for_remote_uri(func: Callable[[str], Any]) -> None:
     """Remote URIs raise :class:`pyvista.LocalFileRequiredError` so PyVista downloads first."""
     with pytest.raises(pv.LocalFileRequiredError):
@@ -112,7 +114,7 @@ def test_read_raises_for_remote_uri(func: Callable[[str], Any]) -> None:
 @pytest.mark.skipif(
     not _HAS_READER_REGISTRY,
     reason="requires pyvista >= 0.48 reader registry",
-)  # type: ignore
+)
 def test_pv_read_dispatches_to_entry_point() -> None:
     """``pv.read('*.stl')`` resolves to ``pyvista_stl.read_as_mesh`` via the registry."""
     pv.read(TEST_FILE_BINARY)

@@ -51,8 +51,12 @@ quiet-level = 3
 skip = '*.cxx,*.h,*.gif,*.png,*.jpg,*.js,*.html,*.doctree,*.ttf,*.woff,*.woff2,*.eot,*.mp4,*.inv,*.pickle,*.ipynb,flycheck*,./.git/*,./.hypothesis/*,*.yml,./doc/build/*,./doc/images/*,./dist/*,*~,.hypothesis*,*.cpp,*.c'
 
 [tool.mypy]
-plugins = ["numpy.typing.mypy_plugin", 'npt_promote']
-# disable_error_code = ['assignment', 'index', 'misc']
+# pytest's mark.* decorators are not typed in their installed stubs, so
+# strict-mode mypy flags every decorated test as "untyped". Tests are
+# runtime-validated; we don't gain anything from refusing to type-check
+# them just because a decorator from pytest lacks a stub.
+disallow_untyped_decorators = false
+plugins = ['npt_promote']
 strict = true
 
 [tool.pytest.ini_options]

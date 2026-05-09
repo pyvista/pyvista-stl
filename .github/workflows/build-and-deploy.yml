@@ -12,6 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Third-party actions are pinned to a full commit SHA. The trailing
+# comment names the matching release tag for human readers. Dependabot
+# keeps these in sync (see .github/dependabot.yml). Pinning to a tag,
+# or to a moving branch like ``release/v1``, lets a compromised
+# maintainer ship a malicious release that exfiltrates the PyPI OIDC
+# token.
+
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
@@ -21,14 +28,14 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest, macos-15-intel]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       with:
         fetch-depth: 0  # required for setuptools_scm
 
     - name: Build wheels
-      uses: pypa/cibuildwheel@v3.3.0
+      uses: pypa/cibuildwheel@45616d2b12f67573cd48b844c047f8cda2809f43  # v3.3.0
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
       with:
         name: pyvista-stl-wheels-${{ matrix.os }}
         path: ./wheelhouse/*.whl
@@ -37,11 +44,11 @@ jobs:
     name: Build source distribution
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       with:
         fetch-depth: 0  # required for setuptools_scm
 
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
       with:
         python-version: '3.13'
 
@@ -62,7 +69,7 @@ jobs:
         pip install pytest pyvista
         pytest
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
       with:
         name: pyvista-stl-sdist
         path: dist/*.tar.gz
@@ -79,14 +86,14 @@ jobs:
       id-token: write  # mandatory for PyPI trusted publishing (OIDC)
       contents: write  # required to create a GitHub Release
     steps:
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
       with:
         path: dist
         merge-multiple: true
         pattern: pyvista-stl-*
     - run: ls -alR dist/
     - name: Publish package distributions to PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
+      uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ github.token }}

@@ -10,31 +10,30 @@
 .. |MIT| image:: https://img.shields.io/badge/License-MIT-yellow.svg
    :target: https://opensource.org/licenses/MIT
 
-``pyvista-stl`` is a Python library for rapidly reading binary and ASCII
-STL files. It wraps a `nanobind
-<https://nanobind.readthedocs.io/en/latest/>`_ interface to the fast STL
-library provided by `libstl <https://github.com/aki5/libstl>`_. Thanks
-@aki5!
+A fast STL reader for Python. Reads binary and ASCII files, merges
+duplicate vertices on the way in, and returns NumPy arrays.
 
-The main advantage of ``pyvista-stl`` over other STL reading libraries
-is its performance. It is particularly well-suited for large files,
-mainly due to its efficient use of hashing when merging points. This
-results in a 5-35x speedup over VTK for files containing between 4,000
-and 9,000,000 points.
+On the synthetic 1M-point benchmark below, reading takes about 50 ms on
+a Ryzen 9 8945HS, roughly 20x faster than VTK's STL reader and 50x
+faster than ``meshio``. The implementation is a memory-mapped parser, a
+multi-threaded ASCII path, and a concurrent open-addressing hashtable
+for vertex deduplication. See Benchmarks_ for the numbers and the
+reproduction script.
 
-See the benchmarks below for more details.
+The vertex hash function (``final96``) and the iterative table sizing
+helper (``nextpow2``) are taken from `aki5/libstl
+<https://github.com/aki5/libstl>`_; see ``src/hash96.h``. The rest of
+the parser is independent.
 
 **************
  Installation
 **************
 
-The recommended way to install ``pyvista-stl`` is via PyPI:
-
 .. code:: sh
 
    pip install pyvista-stl
 
-You can also clone the repository and install it from source:
+To build from source:
 
 .. code:: sh
 
@@ -46,8 +45,7 @@ You can also clone the repository and install it from source:
  Usage
 *******
 
-Load in the vertices and indices of a STL file directly as a NumPy
-array:
+Read an STL file as merged ``(vertices, indices)`` arrays:
 
 .. code:: pycon
 
@@ -70,12 +68,12 @@ array:
           [9005999, 9005996, 9005995],
           [9005998, 9005999, 9005995]], dtype=uint32)
 
-In this example, ``vertices`` is a 2D NumPy array where each row
-represents a vertex and the three columns represent the X, Y, and Z
-coordinates, respectively. ``indices`` is a 1D NumPy array representing
-the triangles from the STL file.
+``vertices`` is the deduplicated ``(n_points, 3)`` ``float32`` array.
+``indices`` is the ``(n_triangles, 3)`` ``uint32`` array of vertex
+indices into ``vertices``. Both binary and ASCII files are accepted; the
+format is detected automatically.
 
-Alternatively, you can load in the STL file as a PyVista PolyData:
+To get a :class:`pyvista.PolyData` directly:
 
 .. code:: pycon
 
@@ -91,99 +89,64 @@ Alternatively, you can load in the STL file as a PyVista PolyData:
      Z Bounds:   -5.551e-17, 5.551e-17
      N Arrays:   0
 
-When ``pyvista-stl`` is installed alongside ``pyvista >= 0.48``,
-``pyvista.read`` automatically dispatches ``.stl`` files through
-``pyvista_stl`` via the ``pyvista.readers`` entry point, no manual
-registration is required:
+With ``pyvista >= 0.48`` installed, ``pyvista.read`` automatically
+dispatches ``.stl`` files to ``pyvista_stl`` via the ``pyvista.readers``
+entry point:
 
 .. code:: pycon
 
    >>> import pyvista as pv
-   >>> mesh = pv.read("example.stl")  # now powered by pyvista_stl
+   >>> mesh = pv.read("example.stl")  # uses pyvista_stl
 
-***********
- Benchmark
-***********
+************
+ Benchmarks
+************
 
-The main reason behind writing yet another STL file reader for Python is
-to leverage the performant `libstl <https://github.com/aki5/libstl>`_
-library.
+Reading a 1,002,001-point binary STL (``pyvista.Plane(i_resolution=250,
+j_resolution=250).triangulate().subdivide(2)``, 2,000,000 triangles),
+measured on a Ryzen 9 8945HS:
 
-Here are some timings from reading in a 1,000,000 point binary STL file:
++--------------------+-----------------+
+| Library            | Time (seconds)  |
++====================+=================+
+| ``pyvista-stl``    | 0.051           |
++--------------------+-----------------+
+| ``numpy-stl``      | 0.225 [#nps]_   |
++--------------------+-----------------+
+| ``pyvista`` (VTK)  | 1.094           |
++--------------------+-----------------+
+| ``meshio``         | 2.801           |
++--------------------+-----------------+
 
-+-------------+-----------------------+
-| Library     | Time (seconds)        |
-+=============+=======================+
-| pyvista-stl | 0.174                 |
-+-------------+-----------------------+
-| numpy-stl   | 0.201 (see note)      |
-+-------------+-----------------------+
-| PyVista     | 1.663                 |
-| (VTK)       |                       |
-+-------------+-----------------------+
-| meshio      | 4.451                 |
-+-------------+-----------------------+
+.. [#nps]
 
-**Note** ``numpy-stl`` does not merge duplicate vertices.
+   ``numpy-stl`` does not merge duplicate vertices, so the time is for the
+   larger non-deduplicated representation.
 
-Comparison with VTK
-===================
+Reproduce these numbers with the script in ``benchmarks/``:
 
-Here's an additional benchmark comparing VTK with ``pyvista-stl``:
+.. code:: sh
 
-.. code:: python
+   python benchmarks/make_readme_figures.py
 
-   import numpy as np
-   import time
-   import pyvista as pv
-   import matplotlib.pyplot as plt
-   import pyvista_stl
+Comparison with VTK across mesh sizes
+=====================================
 
-   times = []
-   filename = 'tmp.stl'
-   for res in range(50, 800, 50):
-       mesh = pv.Plane(i_resolution=res, j_resolution=res).triangulate().subdivide(2)
-       mesh.save(filename)
-
-       tstart = time.time()
-       out_pv = pv.read(filename)
-       vtk_time = time.time() - tstart
-
-       tstart = time.time()
-       out_stl = pyvista_stl.read(filename)
-       pyvista_stl_time =  time.time() - tstart
-
-       times.append([mesh.n_points, vtk_time, pyvista_stl_time])
-       print(times[-1])
-
-
-   times = np.array(times)
-   plt.figure(1)
-   plt.title('STL load time')
-   plt.plot(times[:, 0], times[:, 1], label='VTK')
-   plt.plot(times[:, 0], times[:, 2], label='pyvista_stl')
-   plt.xlabel('Number of Points')
-   plt.ylabel('Time to Load (seconds)')
-   plt.legend()
-
-   plt.figure(2)
-   plt.title('STL load time (Log-Log)')
-   plt.loglog(times[:, 0], times[:, 1], label='VTK')
-   plt.loglog(times[:, 0], times[:, 2], label='pyvista_stl')
-   plt.xlabel('Number of Points')
-   plt.ylabel('Time to Load (seconds)')
-   plt.legend()
-   plt.show()
+The gap widens with file size. ``pyvista-stl`` scales near-linearly;
+VTK's reader scales super-linearly:
 
 .. image:: https://github.com/pyvista/pyvista-stl/raw/main/bench0.png
 
+Same data on log-log axes:
+
 .. image:: https://github.com/pyvista/pyvista-stl/raw/main/bench1.png
 
-Read in ASCII Meshes
-====================
+ASCII files
+===========
 
-The `pyvista-stl` also supports ASCII files and is around 2.4 times
-faster than VTK at reading ASCII files.
+The ASCII parser is parallelized across CPU cores. On the synthetic
+benchmark below, it runs roughly 30-60x faster than VTK on the multi-MB
+inputs in the suite.
 
 .. code:: python
 
@@ -192,41 +155,59 @@ faster than VTK at reading ASCII files.
    import pyvista as pv
    import numpy as np
 
-   # create and save a ASCII file
+   # Create and save an ASCII file
    n = 1000
    mesh = pv.Plane(i_resolution=n, j_resolution=n).triangulate()
    mesh.save("/tmp/tmp-ascii.stl", binary=False)
 
-   # stl reader
-   tstart = time.time()
+   tstart = time.perf_counter()
    mesh = pyvista_stl.read_as_mesh("/tmp/tmp-ascii.stl")
-   print("pyvista-stl   ", time.time() - tstart)
+   print("pyvista-stl   ", time.perf_counter() - tstart)
 
-   tstart = time.time()
+   tstart = time.perf_counter()
    pv_mesh = pv.read("/tmp/tmp-ascii.stl")
-   print("pyvista reader", time.time() - tstart)
+   print("pyvista reader", time.perf_counter() - tstart)
 
-   # verify meshes are identical
-   assert np.allclose(mesh.points, pv_mesh.points)
+   # Same point set (vertex order is implementation-defined)
+   assert np.allclose(np.sort(mesh.points, axis=0),
+                      np.sort(pv_mesh.points, axis=0))
 
-   # approximate time to read in the 1M point file:
-   # pyvista-stl    0.80303955078125
-   # pyvista reader 1.916085958480835
+   # Approximate timings for the 1M-point file:
+   # pyvista-stl    0.022
+   # pyvista reader 1.150
+
+***************
+ Configuration
+***************
+
+``PYVISTA_STL_THREADS`` (integer, default: logical core count, capped at
+32) controls the number of worker threads. Set it to ``1`` for the
+single-threaded path, which produces deterministic vertex ordering.
+
+``PYVISTA_STL_MAX_TRIS`` (integer, default: 200,000,000) caps the
+declared triangle count the reader will accept. Files claiming more
+triangles than the cap raise ``RuntimeError`` before any large
+allocation, which prevents an attacker-controlled header from forcing
+multi-GB allocations.
 
 *****************************
- License and Acknowledgments
+ License and acknowledgments
 *****************************
 
-This project relies on `libstl <https://github.com/aki5/libstl>`_ for
-reading in and merging the vertices of a STL file. Wherever code is
-reused, the original `MIT License
-<https://github.com/aki5/libstl/blob/master/LICENSE>`_ is mentioned.
+This project began as a wrapper around `aki5/libstl
+<https://github.com/aki5/libstl>`_; the binary-format reader and the
+hash-based vertex merge are derived from that library, used under its
+`MIT License <https://github.com/aki5/libstl/blob/master/LICENSE>`_.
 
-The work in this repository is also licensed under the MIT License.
+Significant changes since: mmap-backed input, ASCII reader, a
+multi-threaded path with a concurrent hashtable, hugepage-backed scratch
+buffers, and a nanobind interface.
+
+This repository is also licensed under the MIT License.
 
 *********
  Support
 *********
 
-If you are having issues, please feel free to raise an `Issue
-<https://github.com/pyvista/pyvista-stl/issues>`_.
+Please open an issue at `pyvista/pyvista-stl
+<https://github.com/pyvista/pyvista-stl/issues>`_ if you hit a problem.
