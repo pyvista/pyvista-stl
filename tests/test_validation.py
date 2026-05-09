@@ -71,9 +71,7 @@ def test_parsed_mesh_is_valid(stl_path: Path) -> None:
         if value:
             failures[field] = value
 
-    assert not failures, (
-        f"Parser produced an invalid mesh for {stl_path.name}: {failures}"
-    )
+    assert not failures, f"Parser produced an invalid mesh for {stl_path.name}: {failures}"
 
 
 def test_parsed_indices_in_range(stl_path: Path) -> None:

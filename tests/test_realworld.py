@@ -131,7 +131,5 @@ def test_realworld_validates(stl_example: str) -> None:
     """Real-world parsed meshes pass PyVista's parser-attributable validation."""
     mesh = pyvista_stl.read_as_mesh(stl_example)
     report = mesh.validate_mesh(validation_fields=list(_PARSER_VALIDATION_FIELDS))
-    failures = {
-        f: getattr(report, f) for f in _PARSER_VALIDATION_FIELDS if getattr(report, f)
-    }
+    failures = {f: getattr(report, f) for f in _PARSER_VALIDATION_FIELDS if getattr(report, f)}
     assert not failures, f"parser validation failed for {stl_example}: {failures}"
