@@ -73,7 +73,7 @@ Read an STL file as merged ``(vertices, indices)`` arrays:
 indices into ``vertices``. Both binary and ASCII files are accepted; the
 format is detected automatically.
 
-To get a :class:`pyvista.PolyData` directly:
+To get a ``pyvista.PolyData`` directly:
 
 .. code:: pycon
 

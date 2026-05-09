@@ -50,6 +50,36 @@ THE SOFTWARE.
 #define HAVE_MMAP 0
 #endif
 
+// Portable spin-pause and prefetch hints. Each compiler/architecture
+// has its own intrinsic; non-x86 compilers without one fall back to
+// no-ops, which is correct (the hints are hints, not contracts).
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
+#if defined(__x86_64__) || defined(__i386__)
+#define PYVISTA_STL_PAUSE() __builtin_ia32_pause()
+#elif defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
+#define PYVISTA_STL_PAUSE() _mm_pause()
+#elif defined(__aarch64__) || defined(__arm__)
+#define PYVISTA_STL_PAUSE() ((void)0)
+#else
+#define PYVISTA_STL_PAUSE() ((void)0)
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#define PYVISTA_STL_PREFETCH_R(addr) __builtin_prefetch((addr), 0, 0)
+#define PYVISTA_STL_PREFETCH_W(addr) __builtin_prefetch((addr), 1, 0)
+#elif defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))
+#define PYVISTA_STL_PREFETCH_R(addr)                                           \
+  _mm_prefetch((const char *)(addr), _MM_HINT_NTA)
+#define PYVISTA_STL_PREFETCH_W(addr)                                           \
+  _mm_prefetch((const char *)(addr), _MM_HINT_NTA)
+#else
+#define PYVISTA_STL_PREFETCH_R(addr) ((void)0)
+#define PYVISTA_STL_PREFETCH_W(addr) ((void)0)
+#endif
+
 #include "array_support.h"
 #include "hash96.h"
 #include "stlfile.h"
@@ -309,11 +339,9 @@ static inline vertex_t mt_vertex(uint32_t *verts, std::atomic<uint32_t> *vht,
         continue;
       }
       if (cur == SLOT_RESERVED) {
-        // Another thread claimed; spin briefly.
-        // Pause to ease the bus.
-#if defined(__x86_64__) || defined(_M_X64)
-        __builtin_ia32_pause();
-#endif
+        // Another thread claimed the slot. Pause briefly to ease the
+        // cache-line ping-pong, then re-check.
+        PYVISTA_STL_PAUSE();
         continue;
       }
       // occupied
@@ -399,7 +427,11 @@ static std::atomic<uint32_t> *alloc_atomic_table(size_t n, void *&backing,
   void *p = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (p != MAP_FAILED) {
+    // MADV_HUGEPAGE is Linux-only; macOS does not define it. The hint
+    // is best-effort either way, so just skip it where unavailable.
+#ifdef MADV_HUGEPAGE
     ::madvise(p, bytes, MADV_HUGEPAGE);
+#endif
     backing = p;
     backing_len = bytes;
     return reinterpret_cast<std::atomic<uint32_t> *>(p);
@@ -465,13 +497,13 @@ static int loadstl_binary_mt(const uint8_t *data, size_t /*size*/,
       // it will hash into, to overlap DRAM latency.
       const uint8_t *pf_trec = trec + (size_t)PF_DIST * 50;
       if (pf_trec < trec_end) {
-        __builtin_prefetch(pf_trec, 0, 0);
+        PYVISTA_STL_PREFETCH_R(pf_trec);
         // Hash the prefetched vertices to prefetch their slots.
         for (int ti = 0; ti < 3; ++ti) {
           uint32_t pv[3];
           std::memcpy(pv, pf_trec + 12 + 12 * ti, 12);
           uint32_t h = final96(pv[0], pv[1], pv[2]);
-          __builtin_prefetch(&vht[h & mask], 1, 0);
+          PYVISTA_STL_PREFETCH_W(&vht[h & mask]);
         }
       }
       for (int ti = 0; ti < 3; ti++) {
