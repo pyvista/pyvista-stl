@@ -26,29 +26,32 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _sweep(stl_path: Path, resolutions: list[int], n: int) -> np.ndarray:
-    """Return ``(len(resolutions), 3)`` array of [n_points, vtk_seconds, pvstl_seconds]."""
+    """Return ``(len(resolutions), 4)`` array of [n_points, vtk_s, pvstl_st_s, pvstl_mt_s]."""
     rows = []
     for res in resolutions:
         mesh = make_test_mesh(res)
         mesh.save(stl_path)
         _, vtk_med = time_call(_bind(READERS["vtk"], stl_path), n=n)
-        _, pvstl_med = time_call(_bind(READERS["pyvista_stl"], stl_path), n=n)
-        rows.append((mesh.n_points, vtk_med, pvstl_med))
+        _, st_med = time_call(_bind(READERS["pyvista_stl"], stl_path), n=n)
+        _, mt_med = time_call(_bind(READERS["pyvista_stl_mt"], stl_path), n=n)
+        rows.append((mesh.n_points, vtk_med, st_med, mt_med))
         print(
             f"res={res:4d}  npts={mesh.n_points:>10,}  "
-            f"vtk={vtk_med * 1000:9.1f}ms  pvstl={pvstl_med * 1000:9.1f}ms  "
-            f"speedup={vtk_med / pvstl_med:5.1f}x"
+            f"vtk={vtk_med * 1000:9.1f}ms  pvstl(st)={st_med * 1000:9.1f}ms  "
+            f"pvstl(mt)={mt_med * 1000:9.1f}ms  "
+            f"speedup_st={vtk_med / st_med:5.1f}x  speedup_mt={vtk_med / mt_med:5.1f}x"
         )
     return np.asarray(rows)
 
 
 def _plot(rows: np.ndarray, *, log_axes: bool, output: Path, title: str) -> None:
-    npts, vtk_t, pvstl_t = rows[:, 0], rows[:, 1], rows[:, 2]
+    npts, vtk_t, st_t, mt_t = rows[:, 0], rows[:, 1], rows[:, 2], rows[:, 3]
     plt.figure(figsize=(7, 5))
     plt.title(title)
     plot = plt.loglog if log_axes else plt.plot
     plot(npts, vtk_t, "o-", label="VTK", color="C1")
-    plot(npts, pvstl_t, "o-", label="pyvista-stl", color="C0")
+    plot(npts, st_t, "o-", label="pyvista-stl (single-threaded)", color="C0")
+    plot(npts, mt_t, "o--", label="pyvista-stl (multi-threaded)", color="C2")
     plt.xlabel("Number of points")
     plt.ylabel("Time to load (seconds)")
     plt.grid(alpha=0.3, which="both" if log_axes else "major")

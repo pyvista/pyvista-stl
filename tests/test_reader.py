@@ -67,7 +67,7 @@ EXPECTED_FACES = np.array(
         [5, 4, 10],
         [5, 11, 6],
     ],
-    dtype=np.uint32,
+    dtype=np.int32,
 )
 
 

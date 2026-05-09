@@ -63,7 +63,7 @@ def test_binary_single_triangle(stl_dir: Path) -> None:
     points, indices = pyvista_stl.read(fname)
 
     assert points.dtype == np.float32
-    assert indices.dtype == np.uint32
+    assert indices.dtype == np.int32
     assert points.shape == (3, 3)
     assert indices.shape == (1, 3)
     _assert_mesh_equals(points, indices, tris)

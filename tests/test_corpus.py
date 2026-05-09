@@ -69,7 +69,7 @@ def test_corpus_matches_vtk(stl_path: Path) -> None:
     points, indices = pyvista_stl.read(stl_path)
 
     assert points.dtype == np.float32
-    assert indices.dtype == np.uint32
+    assert indices.dtype == np.int32
 
     expected_points, n_points, n_cells, expected_cells = _vtk_read(stl_path)
 

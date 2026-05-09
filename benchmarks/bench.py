@@ -8,7 +8,7 @@ Examples
 --------
     python benchmarks/bench.py
     python benchmarks/bench.py --dir /tmp/stl_bench --readers pyvista_stl,vtk
-    PYVISTA_STL_THREADS=1 python benchmarks/bench.py
+    python benchmarks/bench.py --readers pyvista_stl,pyvista_stl_mt,vtk
 """
 
 import argparse
@@ -49,7 +49,7 @@ def main() -> int:
     parser.add_argument("-n", type=int, default=3, help="repetitions per measurement")
     parser.add_argument(
         "--readers",
-        default="pyvista_stl,vtk",
+        default="pyvista_stl,pyvista_stl_mt,vtk",
         help="comma-separated reader names: " + ",".join(READERS),
     )
     args = parser.parse_args()

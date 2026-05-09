@@ -7,10 +7,7 @@ agreement between the single-threaded and multi-threaded paths on the
 same input.
 """
 
-import os
 import struct
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +18,6 @@ import pyvista_stl
 from _helpers import (
     make_grid_triangles,
     make_unit_triangle,
-    write_ascii_stl,
     write_binary_stl,
 )
 
@@ -166,23 +162,6 @@ def test_nul_byte_in_path_rejected(stl_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _read_with_threads(path: Path, threads: int) -> tuple[np.ndarray, np.ndarray]:
-    """Run the reader in a subprocess with ``PYVISTA_STL_THREADS=threads``."""
-    code = (
-        "import sys, pyvista_stl, pickle\n"
-        f"v, i = pyvista_stl.read({str(path)!r})\n"
-        "sys.stdout.buffer.write(pickle.dumps((v, i)))\n"
-    )
-    env = {**os.environ, "PYVISTA_STL_THREADS": str(threads)}
-    out = subprocess.check_output([sys.executable, "-c", code], env=env)
-    import pickle
-
-    pts, idx = pickle.loads(out)
-    assert isinstance(pts, np.ndarray)
-    assert isinstance(idx, np.ndarray)
-    return pts, idx
-
-
 def test_seq_and_mt_agree_on_grid(stl_dir: Path) -> None:
     """The sequential and multi-threaded binary paths produce equivalent meshes.
 
@@ -194,8 +173,8 @@ def test_seq_and_mt_agree_on_grid(stl_dir: Path) -> None:
     fname = stl_dir / "grid_diff.stl"
     write_binary_stl(fname, tris)
 
-    pts_seq, idx_seq = _read_with_threads(fname, threads=1)
-    pts_mt, idx_mt = _read_with_threads(fname, threads=8)
+    pts_seq, idx_seq = pyvista_stl.read(fname, threads=1)
+    pts_mt, idx_mt = pyvista_stl.read(fname, threads=8)
 
     assert pts_seq.shape == pts_mt.shape
     assert idx_seq.shape == idx_mt.shape
@@ -210,7 +189,7 @@ def test_seq_and_mt_agree_on_grid(stl_dir: Path) -> None:
 
 
 def test_seq_path_is_deterministic(stl_dir: Path) -> None:
-    """Two reads with PYVISTA_STL_THREADS=1 produce byte-identical output.
+    """Two reads with ``threads=1`` produce byte-identical output.
 
     Documents the sequential path's deterministic-vertex-ordering
     contract that the README advertises.
@@ -219,11 +198,39 @@ def test_seq_path_is_deterministic(stl_dir: Path) -> None:
     fname = stl_dir / "seq_det.stl"
     write_binary_stl(fname, tris)
 
-    a_pts, a_idx = _read_with_threads(fname, threads=1)
-    b_pts, b_idx = _read_with_threads(fname, threads=1)
+    a_pts, a_idx = pyvista_stl.read(fname, threads=1)
+    b_pts, b_idx = pyvista_stl.read(fname, threads=1)
 
     np.testing.assert_array_equal(a_pts, b_pts)
     np.testing.assert_array_equal(a_idx, b_idx)
+
+
+def test_default_threads_is_single_threaded(stl_dir: Path) -> None:
+    """The default invocation matches ``threads=1`` byte-for-byte.
+
+    Pins the documented default so a future change to the dispatch
+    rule cannot quietly flip users onto the multi-threaded path.
+    """
+    tris = make_grid_triangles(40)
+    fname = stl_dir / "seq_default.stl"
+    write_binary_stl(fname, tris)
+
+    default_pts, default_idx = pyvista_stl.read(fname)
+    seq_pts, seq_idx = pyvista_stl.read(fname, threads=1)
+
+    np.testing.assert_array_equal(default_pts, seq_pts)
+    np.testing.assert_array_equal(default_idx, seq_idx)
+
+
+def test_threads_zero_selects_auto(stl_dir: Path) -> None:
+    """``threads=0`` is honored as auto-select (hardware_concurrency)."""
+    tris = make_grid_triangles(20)
+    fname = stl_dir / "auto.stl"
+    write_binary_stl(fname, tris)
+
+    pts, idx = pyvista_stl.read(fname, threads=0)
+    assert pts.shape[1] == 3
+    assert idx.shape[1] == 3
 
 
 # ---------------------------------------------------------------------------

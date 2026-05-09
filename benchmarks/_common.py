@@ -27,7 +27,13 @@ def time_call(fn: Callable[[], object], *, n: int = 5, warmup: int = 1) -> tuple
 
 
 def read_pyvista_stl(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    return pyvista_stl.read(path)
+    """Single-threaded read (the API default)."""
+    return pyvista_stl.read(path, threads=1)
+
+
+def read_pyvista_stl_mt(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Multi-threaded read using ``hardware_concurrency()``."""
+    return pyvista_stl.read(path, threads=0)
 
 
 def read_vtk(path: Path) -> "pv.PolyData":
@@ -54,6 +60,7 @@ def read_meshio(path: Path) -> object:
 
 READERS: dict[str, Callable[[Path], object]] = {
     "pyvista_stl": read_pyvista_stl,
+    "pyvista_stl_mt": read_pyvista_stl_mt,
     "vtk": read_vtk,
     "numpy_stl": read_numpy_stl,
     "meshio": read_meshio,

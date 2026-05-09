@@ -115,3 +115,23 @@ def test_realworld_read_as_mesh(stl_example: str) -> None:
         np.sort(np.asarray(ours.points), axis=0),
         np.sort(np.asarray(theirs.points), axis=0),
     )
+
+
+_PARSER_VALIDATION_FIELDS = (
+    "non_finite_points",
+    "invalid_point_references",
+    "wrong_number_of_points",
+    "cell_data_wrong_length",
+    "point_data_wrong_length",
+    "unused_points",
+)
+
+
+def test_realworld_validates(stl_example: str) -> None:
+    """Real-world parsed meshes pass PyVista's parser-attributable validation."""
+    mesh = pyvista_stl.read_as_mesh(stl_example)
+    report = mesh.validate_mesh(validation_fields=list(_PARSER_VALIDATION_FIELDS))
+    failures = {
+        f: getattr(report, f) for f in _PARSER_VALIDATION_FIELDS if getattr(report, f)
+    }
+    assert not failures, f"parser validation failed for {stl_example}: {failures}"

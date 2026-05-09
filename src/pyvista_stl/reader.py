@@ -86,7 +86,9 @@ def _polydata_from_faces(
 
 def read(
     filename: str | os.PathLike[str],
-) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.uint32]]:
+    *,
+    threads: int = 1,
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.int32]]:
     """Read an STL file and return its merged vertex and triangle arrays.
 
     Both binary and ASCII STL files are supported; the format is
@@ -96,6 +98,13 @@ def read(
     ----------
     filename : str | os.PathLike
         Path to the STL file.
+    threads : int, default: 1
+        Number of worker threads. ``1`` (the default) uses the
+        single-threaded path, which produces deterministic vertex
+        ordering and is the safest choice for embedded/server use.
+        Pass an integer ``>= 2`` to opt into the multi-threaded
+        ASCII/binary parsers, or ``0`` to auto-select
+        ``hardware_concurrency()``. Worker counts are capped at 32.
 
     Returns
     -------
@@ -103,7 +112,7 @@ def read(
         ``(n_points, 3)`` ``float32`` array of unique merged vertex
         coordinates.
     indices : numpy.ndarray
-        ``(n_triangles, 3)`` ``uint32`` array of vertex indices into
+        ``(n_triangles, 3)`` ``int32`` array of vertex indices into
         ``vertices``.
 
     Raises
@@ -134,7 +143,7 @@ def read(
            ...,
            [9005998, 9005988, 9005999],
            [9005999, 9005996, 9005995],
-           [9005998, 9005999, 9005995]], dtype=uint32)
+           [9005998, 9005999, 9005995]], dtype=int32)
 
     """
     fname = os.fspath(filename)
@@ -142,10 +151,14 @@ def read(
     # signal PyVista to download the file and retry locally.
     if _has_scheme is not None and _has_scheme(fname):
         raise _LocalFileRequiredError
-    return _stlfile_wrapper.get_stl_data(fname)
+    return _stlfile_wrapper.get_stl_data(fname, threads)
 
 
-def read_as_mesh(filename: str | os.PathLike[str]) -> "PolyData":
+def read_as_mesh(
+    filename: str | os.PathLike[str],
+    *,
+    threads: int = 1,
+) -> "PolyData":
     """Read an STL file and return it as a :class:`pyvista.PolyData`.
 
     Wraps :func:`read` and packs the merged vertex/triangle arrays
@@ -155,6 +168,11 @@ def read_as_mesh(filename: str | os.PathLike[str]) -> "PolyData":
     ----------
     filename : str | os.PathLike
         Path to the STL file.
+    threads : int, default: 1
+        Number of worker threads. ``1`` (the default) uses the
+        single-threaded path. Pass ``>= 2`` to opt into the
+        multi-threaded parsers, or ``0`` to auto-select
+        ``hardware_concurrency()``. Worker counts are capped at 32.
 
     Returns
     -------
@@ -171,8 +189,8 @@ def read_as_mesh(filename: str | os.PathLike[str]) -> "PolyData":
     Notes
     -----
     Requires the ``pyvista`` package. The connectivity array is
-    ``int32`` by default; it is promoted to ``int64`` when either the
-    point count or the connectivity offset exceeds the ``int32`` range.
+    ``int32`` by default; it is promoted to ``int64`` when the
+    connectivity offset exceeds the ``int32`` range.
 
     Examples
     --------
@@ -189,14 +207,15 @@ def read_as_mesh(filename: str | os.PathLike[str]) -> "PolyData":
       N Arrays:   0
 
     """
-    vertices, indices = read(filename)
+    vertices, indices = read(filename, threads=threads)
 
-    needs_int64 = (
-        indices.size >= np.iinfo(np.int32).max or vertices.shape[0] > np.iinfo(np.int32).max
-    )
-    indices_int: npt.NDArray[np.int32] | npt.NDArray[np.int64] = (
-        indices.astype(np.int64, copy=False)
-        if needs_int64
-        else indices.astype(np.int32, copy=False)
-    )
+    # ``read`` already returns int32 indices. The vtkCellArray offset
+    # array is what dictates int32 vs int64: it spans
+    # ``range(0, indices.size + 1, 3)``, so promote both arrays to
+    # int64 only when ``indices.size`` itself overflows int32.
+    indices_int: npt.NDArray[np.int32] | npt.NDArray[np.int64]
+    if indices.size >= np.iinfo(np.int32).max:
+        indices_int = indices.astype(np.int64, copy=False)
+    else:
+        indices_int = indices
     return _polydata_from_faces(vertices, indices_int)

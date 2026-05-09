@@ -1086,21 +1086,22 @@ static constexpr size_t MT_ASCII_THRESHOLD = 4 * 1024 * 1024;
 // on machines with very high logical core counts.
 static constexpr unsigned MT_THREAD_CAP = 32;
 
-// Resolve the worker thread count: ``PYVISTA_STL_THREADS`` if set,
-// otherwise hardware_concurrency, capped at MT_THREAD_CAP. Returns at
-// least 1.
-static unsigned resolve_thread_count() {
-  unsigned hw = std::thread::hardware_concurrency();
-  if (hw == 0)
-    hw = 1;
-  if (const char *env = std::getenv("PYVISTA_STL_THREADS")) {
-    long v = std::strtol(env, nullptr, 10);
-    if (v > 0)
-      hw = (unsigned)v;
+// Resolve the worker thread count from the user-supplied value.
+//   ``threads <= 0`` selects ``hardware_concurrency()`` (auto).
+//   ``threads >= 1`` is honored as-is.
+// The result is capped at MT_THREAD_CAP and clamped to at least 1.
+static unsigned resolve_thread_count(int threads) {
+  unsigned n;
+  if (threads <= 0) {
+    n = std::thread::hardware_concurrency();
+    if (n == 0)
+      n = 1;
+  } else {
+    n = (unsigned)threads;
   }
-  if (hw > MT_THREAD_CAP)
-    hw = MT_THREAD_CAP;
-  return hw;
+  if (n > MT_THREAD_CAP)
+    n = MT_THREAD_CAP;
+  return n;
 }
 
 // Return codes from loadstl_dispatch.
@@ -1109,13 +1110,13 @@ static unsigned resolve_thread_count() {
 //  -2  - invalid or unrecognized format
 //  -3  - declared triangle count exceeds the configured cap
 
-static int loadstl_dispatch(const uint8_t *data, size_t size, float **vertp,
-                            vertex_t *nvertp, vertex_t **trip,
+static int loadstl_dispatch(const uint8_t *data, size_t size, int threads,
+                            float **vertp, vertex_t *nvertp, vertex_t **trip,
                             triangle_t *ntrip) {
   StlFormat s = detect_format(data, size);
   if (s == STL_INVALID)
     return -2;
-  unsigned nthreads = resolve_thread_count();
+  unsigned nthreads = resolve_thread_count(threads);
   triangle_t max_tris = resolve_max_tris();
 
   if (s == STL_BINARY) {
@@ -1181,7 +1182,7 @@ static NDArray<T, N> wrap_malloc_buffer(T *src, std::array<int, N> shape) {
   return NDArray<T, N>(src, N, shape_, owner);
 }
 
-nb::tuple GetStlData(const std::string &filename) {
+nb::tuple GetStlData(const std::string &filename, int threads) {
   // Reject embedded NUL bytes: POSIX open(2) and Windows CreateFile
   // truncate at the first NUL, which can mask the user's intent and
   // hide path-confusion bugs in callers.
@@ -1200,7 +1201,8 @@ nb::tuple GetStlData(const std::string &filename) {
   int rc;
   {
     nb::gil_scoped_release rel;
-    rc = loadstl_dispatch(mf.data, mf.size, &vertp, &nverts, &trip, &ntrip);
+    rc = loadstl_dispatch(mf.data, mf.size, threads, &vertp, &nverts, &trip,
+                          &ntrip);
   }
 
   if (rc != 0) {
@@ -1214,12 +1216,32 @@ nb::tuple GetStlData(const std::string &filename) {
     throw std::runtime_error("Failed to load STL file.");
   }
 
+  // Guard the int32 reinterpret on the indices buffer. The default
+  // PYVISTA_STL_MAX_TRIS cap (200M triangles, <=600M vertices) keeps
+  // every index well within INT32_MAX; only an env-var override could
+  // push past it. Fail loudly rather than silently producing
+  // negative-looking indices.
+  if (nverts > (unsigned int)INT32_MAX) {
+    free(vertp);
+    free(trip);
+    throw std::runtime_error(
+        "STL produced more vertices than fit in int32; raise the cap or "
+        "split the file.");
+  }
+
   NDArray<float, 2> vert_arr =
       wrap_malloc_buffer<float, 2>(vertp, {(int)nverts, 3});
-  NDArray<unsigned int, 2> face_arr =
-      wrap_malloc_buffer<unsigned int, 2>(trip, {(int)ntrip, 3});
+  // The connectivity buffer was filled with values <= nverts <= INT32_MAX,
+  // so reinterpret-cast is safe. Wrapping as int32 matches the dtype VTK
+  // uses for vtkCellArray on default builds and keeps downstream
+  // PolyData construction copy-free.
+  NDArray<int32_t, 2> face_arr = wrap_malloc_buffer<int32_t, 2>(
+      reinterpret_cast<int32_t *>(trip), {(int)ntrip, 3});
 
   return nb::make_tuple(vert_arr, face_arr);
 }
 
-NB_MODULE(_core, m) { m.def("get_stl_data", &GetStlData); }
+NB_MODULE(_core, m) {
+  m.def("get_stl_data", &GetStlData, nb::arg("filename"),
+        nb::arg("threads") = 1);
+}
