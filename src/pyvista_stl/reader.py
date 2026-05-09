@@ -1,6 +1,7 @@
-"""Read a STL file using a wrapper of https://github.com/aki5/libstl."""
+"""High-level Python API for the pyvista-stl reader."""
 
-from typing import TYPE_CHECKING, Tuple
+import os
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -11,57 +12,69 @@ if TYPE_CHECKING:
     from pyvista.core.pointset import PolyData
 
 try:
-    # Available in pyvista >= 0.48: download remote files on read
+    # On pyvista >= 0.48, raising ``LocalFileRequiredError`` from a
+    # reader entry point makes ``pv.read("http://.../foo.stl")``
+    # download the file first and retry against the local copy.
     from pyvista import LocalFileRequiredError as _LocalFileRequiredError
     from pyvista import has_scheme as _has_scheme
-except ImportError:
+except ImportError:  # pragma: no cover - older pyvista or no pyvista installed
     _LocalFileRequiredError = None
     _has_scheme = None
 
 
-def _polydata_from_faces(points: npt.NDArray[float], faces: npt.NDArray[int]) -> "PolyData":
-    """Generate a polydata from a faces array containing no padding and all triangles.
+def _polydata_from_faces(
+    points: npt.NDArray[np.floating[Any]],
+    faces: npt.NDArray[np.int32] | npt.NDArray[np.int64],
+) -> "PolyData":
+    """Build a :class:`pyvista.PolyData` from a triangle connectivity array.
 
-    This is a more efficient way of instantiating PolyData from point and face
-    data.
+    Bypasses :class:`pyvista.PolyData`'s padded-faces inflater for
+    better throughput when the input is already triangles-only.
 
     Parameters
     ----------
-    points : np.ndarray
-        Points array.
-    faces : np.ndarray
-        ``(n, 3)`` faces array.
+    points : numpy.ndarray
+        ``(n_points, 3)`` array of vertex coordinates.
+    faces : numpy.ndarray
+        ``(n_faces, 3)`` array of vertex indices. Must be ``int32`` or
+        ``int64``.
+
+    Returns
+    -------
+    pyvista.PolyData
+        Triangulated polydata holding the supplied points and faces.
 
     """
     try:
         from pyvista.core.pointset import PolyData
-    except ModuleNotFoundError:
-        raise ModuleNotFoundError(
-            "To use this functionality, install PyVista with:\n\npip install pyvista"
-        )
+    except ModuleNotFoundError as exc:
+        msg = "pyvista_stl.read_as_mesh requires PyVista. Install it with: pip install pyvista"
+        raise ModuleNotFoundError(msg) from exc
 
-    from vtkmodules.util.numpy_support import numpy_to_vtk as numpy_to_vtk
+    from vtkmodules.util.numpy_support import numpy_to_vtk
     from vtkmodules.vtkCommonCore import vtkTypeInt32Array, vtkTypeInt64Array
     from vtkmodules.vtkCommonDataModel import vtkCellArray
 
     if faces.ndim != 2:
-        raise ValueError("Expected a two dimensional face array.")
+        msg = f"Expected a 2-D face array, got shape {faces.shape!r}."
+        raise ValueError(msg)
 
     if faces.dtype == np.int32:
         vtk_dtype = vtkTypeInt32Array().GetDataType()
     elif faces.dtype == np.int64:
         vtk_dtype = vtkTypeInt64Array().GetDataType()
     else:
-        raise TypeError(f"Unsupported dtype ({type(faces)} for faces. Expected int32 or int64.")
+        msg = f"Unsupported face dtype {faces.dtype!r}; expected int32 or int64."
+        raise TypeError(msg)
 
-    # convert to vtk arrays without copying
     offset = np.arange(0, faces.size + 1, faces.shape[1], dtype=faces.dtype)
     offset_vtk = numpy_to_vtk(offset, deep=False, array_type=vtk_dtype)
     faces_vtk = numpy_to_vtk(faces.ravel(), deep=False, array_type=vtk_dtype)
 
-    # create the vtk arrays and keep references to avoid gc
     carr = vtkCellArray()
     carr.SetData(offset_vtk, faces_vtk)
+    # Keep references on the cell array so the underlying numpy buffers
+    # are not garbage-collected while VTK still holds raw pointers.
     carr._offset_np_ref = offset_vtk
     carr._faces_np_ref = faces_vtk
 
@@ -71,33 +84,48 @@ def _polydata_from_faces(points: npt.NDArray[float], faces: npt.NDArray[int]) ->
     return pdata
 
 
-def read(filename: str) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.uint32]]:
-    """
-    Read a binary STL file and returns the vertices and points.
+def read(
+    filename: str | os.PathLike[str],
+    *,
+    threads: int = 1,
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.int32]]:
+    """Read an STL file and return its merged vertex and triangle arrays.
+
+    Both binary and ASCII STL files are supported; the format is
+    detected automatically.
 
     Parameters
     ----------
-    filename : str
-        The path to the binary STL file.
+    filename : str | os.PathLike
+        Path to the STL file.
+    threads : int, default: 1
+        Number of worker threads. ``1`` (the default) uses the
+        single-threaded path, which produces deterministic vertex
+        ordering and is the safest choice for embedded/server use.
+        Pass an integer ``>= 2`` to opt into the multi-threaded
+        ASCII/binary parsers, or ``0`` to auto-select
+        ``hardware_concurrency()``. Worker counts are capped at 32.
 
     Returns
     -------
-    vertices : np.ndarray
-        The vertices from the STL file, as a 2D NumPy array. Each row of
-        the array represents a vertex, with the three columns
-        representing the X, Y, and Z coordinates, respectively.
-    indices : np.ndarray
-        The indices representing the triangles from the STL file.
+    vertices : numpy.ndarray
+        ``(n_points, 3)`` ``float32`` array of unique merged vertex
+        coordinates.
+    indices : numpy.ndarray
+        ``(n_triangles, 3)`` ``int32`` array of vertex indices into
+        ``vertices``.
 
     Raises
     ------
-    FileNotFoundError
-        If the specified STL file does not exist.
     RuntimeError
-        If the STL file is not valid or cannot be read.
+        If the file is missing, unreadable, or not a valid STL.
+    pyvista.LocalFileRequiredError
+        If a remote URI is passed and ``pyvista >= 0.48`` is installed.
+        The PyVista reader registry uses this to download the file and
+        retry against the local copy.
 
-    Example
-    -------
+    Examples
+    --------
     >>> import pyvista_stl
     >>> vertices, indices = pyvista_stl.read("example.stl")
     >>> vertices
@@ -115,43 +143,57 @@ def read(filename: str) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.uint32]
            ...,
            [9005998, 9005988, 9005999],
            [9005999, 9005996, 9005995],
-           [9005998, 9005999, 9005995]], dtype=uint32)
+           [9005998, 9005999, 9005995]], dtype=int32)
 
     """
-    filename = str(filename)
-    # When invoked via the ``pyvista.readers`` entry point with a remote
-    # URI, signal PyVista to download the file and retry locally.
-    if _has_scheme is not None and _has_scheme(filename):
+    fname = os.fspath(filename)
+    # When invoked via PyVista's readers registry with a remote URI,
+    # signal PyVista to download the file and retry locally.
+    if _has_scheme is not None and _has_scheme(fname):
         raise _LocalFileRequiredError
-    return _stlfile_wrapper.get_stl_data(filename)
+    return _stlfile_wrapper.get_stl_data(fname, threads)
 
 
-def read_as_mesh(filename: str) -> "PolyData":
-    """
-    Read a binary STL file and return it as a mesh.
+def read_as_mesh(
+    filename: str | os.PathLike[str],
+    *,
+    threads: int = 1,
+) -> "PolyData":
+    """Read an STL file and return it as a :class:`pyvista.PolyData`.
 
-    This function uses the `get_stl_data` function, which is a wrapper
-    of https://github.com/aki5/libstl, to read STL files.
+    Wraps :func:`read` and packs the merged vertex/triangle arrays
+    into a :class:`pyvista.PolyData` without an extra copy.
 
     Parameters
     ----------
-    filename : str
-        The path to the binary STL file.
+    filename : str | os.PathLike
+        Path to the STL file.
+    threads : int, default: 1
+        Number of worker threads. ``1`` (the default) uses the
+        single-threaded path. Pass ``>= 2`` to opt into the
+        multi-threaded parsers, or ``0`` to auto-select
+        ``hardware_concurrency()``. Worker counts are capped at 32.
 
     Returns
     -------
-    mesh : pyvista.PolyData
-        The mesh from the STL file, represented as a PyVista PolyData object.
+    pyvista.PolyData
+        Triangulated polydata.
 
     Raises
     ------
-    FileNotFoundError
-        If the specified STL file does not exist.
+    ModuleNotFoundError
+        If PyVista is not installed.
     RuntimeError
-        If the STL file is not valid or cannot be read.
+        If the file is missing, unreadable, or not a valid STL.
 
-    Example
-    -------
+    Notes
+    -----
+    Requires the ``pyvista`` package. The connectivity array is
+    ``int32`` by default; it is promoted to ``int64`` when the
+    connectivity offset exceeds the ``int32`` range.
+
+    Examples
+    --------
     >>> import pyvista_stl
     >>> mesh = pyvista_stl.read_as_mesh("example.stl")
     >>> mesh
@@ -164,19 +206,16 @@ def read_as_mesh(filename: str) -> "PolyData":
       Z Bounds:   -5.551e-17, 5.551e-17
       N Arrays:   0
 
-    Notes
-    -----
-    Requires the ``pyvista`` library.
-
     """
-    vertices, indices = read(filename)
+    vertices, indices = read(filename, threads=threads)
 
-    # while faces might be correctly sized, the required offset might exceed np.int32
-    dtype = np.int64 if indices.size >= np.iinfo(np.int32).max else np.int32
-
-    # check if we can support int32 conversion
-    if vertices.shape[0] > np.iinfo(np.int32).max:
-        dtype = np.int64
-
-    indices_int = indices.astype(dtype, copy=False)
-    return _polydata_from_faces(vertices, indices_int)  # type: ignore
+    # ``read`` already returns int32 indices. The vtkCellArray offset
+    # array is what dictates int32 vs int64: it spans
+    # ``range(0, indices.size + 1, 3)``, so promote both arrays to
+    # int64 only when ``indices.size`` itself overflows int32.
+    indices_int: npt.NDArray[np.int32] | npt.NDArray[np.int64]
+    if indices.size >= np.iinfo(np.int32).max:
+        indices_int = indices.astype(np.int64, copy=False)
+    else:
+        indices_int = indices
+    return _polydata_from_faces(vertices, indices_int)

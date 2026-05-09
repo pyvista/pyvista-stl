@@ -37,6 +37,13 @@ repos:
   - id: check-merge-conflict
   - id: debug-statements
   - id: trailing-whitespace
+  - id: check-added-large-files
+    # Cap individual committed files at 500 KB. The committed test
+    # corpus tops out around 250 KB; anything larger is almost
+    # certainly an accident (a real-world STL, a profiling trace,
+    # a build artifact). Use ``git lfs`` or download-on-demand when
+    # a genuine large file is needed.
+    args: [--maxkb=500]
 
 - repo: https://github.com/pre-commit/mirrors-mypy
   rev: v1.20.0

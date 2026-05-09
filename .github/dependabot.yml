@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Keep third-party action SHAs current. Pinning by SHA without
+  # updates would freeze us on a vulnerable version forever.
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
