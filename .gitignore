@@ -15,6 +15,3 @@ Makefile
 cmake_install.cmake
 compile_commands.json
 .cache/
-
-# setuptools_scm generated
-src/pyvista_stl/_version.py
