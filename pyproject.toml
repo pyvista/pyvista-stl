@@ -1,27 +1,30 @@
 [build-system]
 build-backend = "scikit_build_core.build"
-requires = ["scikit-build-core >=0.10", "nanobind >=1.3.2", "setuptools-scm>=8"]
+requires = ["scikit-build-core>=0.10", "nanobind>=1.3.2", "setuptools-scm>=8"]
 
 [project]
 authors = [
   {name = "PyVista Developers", email = "info@pyvista.org"}
 ]
 classifiers = [
-  "License :: OSI Approved :: MIT License",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX",
-  "Intended Audience :: Science/Research",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14"
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Visualization"
 ]
-dependencies = [
-  "numpy"
-]
+dependencies = ["numpy"]
 description = "Read in STL files"
 dynamic = ["version"]
+keywords = ["stl", "pyvista", "mesh", "reader", "3d"]
+license = "MIT"
 name = "pyvista-stl"
 readme = "README.rst"
 requires-python = ">=3.10"
@@ -31,7 +34,12 @@ requires-python = ">=3.10"
 ".stl" = "pyvista_stl:read_as_mesh"
 
 [project.optional-dependencies]
-pyvista = ["pyvista"]
+pyvista = ["pyvista>=0.48"]
+
+[project.urls]
+Homepage = "https://github.com/pyvista/pyvista-stl"
+Issues = "https://github.com/pyvista/pyvista-stl/issues"
+Repository = "https://github.com/pyvista/pyvista-stl"
 
 [tool.cibuildwheel]
 archs = ["auto64"]  # 64-bit only
@@ -75,14 +83,10 @@ line-length = 100
 extend-select = ["I"]
 
 [tool.scikit-build]
-# Setuptools-style build caching in a local directory
 build-dir = "build/{wheel_tag}"
 minimum-version = "0.10"
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.exclude = [".github", "*.png", "tests", ".mypy_cache", ".pre-commit-config.yaml", "*_cache", "CONTRIBUTING.md", ".gitignore"]
-sdist.include = ["src/pyvista_stl/_version.py"]
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"
-version_file = "src/pyvista_stl/_version.py"
-version_scheme = "release-branch-semver"
