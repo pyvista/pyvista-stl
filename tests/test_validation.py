@@ -51,7 +51,8 @@ def _bundled_test_stls() -> list[Path]:
 
 @pytest.fixture(params=_bundled_test_stls(), ids=lambda p: p.name)
 def stl_path(request: pytest.FixtureRequest) -> Path:
-    return request.param
+    path: Path = request.param
+    return path
 
 
 def test_parsed_mesh_is_valid(stl_path: Path) -> None:
