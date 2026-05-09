@@ -252,16 +252,49 @@ static uint32_t saturating_nextpow2(uint64_t multiplier, triangle_t ntris) {
 }
 
 // ---------------------------------------------------------------------------
+// ASCII keyword helpers
+// ---------------------------------------------------------------------------
+
+// Case-insensitive ASCII compare for STL keywords ("solid", "facet",
+// "vertex", "endfacet"). The bit-OR-0x20 trick folds 'A'..'Z' onto
+// 'a'..'z' without a table lookup. STL keywords contain only letters,
+// so the only inputs that fold to the same value are the upper/lower
+// variants of those letters — no false positives on digits or
+// punctuation.
+static inline bool ieq(const uint8_t *p, const char *s, size_t n) {
+  for (size_t i = 0; i < n; ++i)
+    if ((p[i] | 0x20) != (uint8_t)(s[i] | 0x20))
+      return false;
+  return true;
+}
+
+static inline bool is_ws_byte(uint8_t c) {
+  return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+// ---------------------------------------------------------------------------
 // Format detection
 // ---------------------------------------------------------------------------
 
 static StlFormat detect_format(const uint8_t *data, size_t size) {
   if (size < 15)
     return STL_INVALID;
-  // ASCII header begins with "solid " (case-sensitive in spec).
-  if (size >= 6 && std::memcmp(data, "solid ", 6) == 0) {
-    // Some binary writers also start with "solid "; verify via size match
-    // for binary: header(80) + count(4) + 50*ntris.
+  // Tolerate an optional UTF-8 BOM and any leading ASCII whitespace
+  // before the "solid" keyword. Real-world writers (PRO2STL among
+  // others) emit a leading space; some hand-edited files carry a BOM.
+  // Match "solid" case-insensitively so writers that emit "SOLID"
+  // (admesh's block.stl, some CAD exporters) parse correctly.
+  size_t off = 0;
+  if (size >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
+    off = 3;
+  while (off < size && is_ws_byte(data[off]))
+    ++off;
+  // "solid" (5) + one whitespace terminator (1) = 6 bytes minimum.
+  if (size - off >= 6 && ieq(data + off, "solid", 5) &&
+      is_ws_byte(data[off + 5])) {
+    // Some binary writers also begin their 80-byte header with the
+    // bytes "solid "; disambiguate via the binary layout
+    // header(80) + count(4) + 50*ntris.
     if (size >= 84) {
       uint32_t nTriangles;
       std::memcpy(&nTriangles, data + 80, sizeof(nTriangles));
@@ -710,7 +743,7 @@ static int loadstl_ascii(const uint8_t *data, size_t size, float **vertp,
     skip_ws();
     if (ptr >= end)
       break;
-    if (end - ptr >= 6 && std::memcmp(ptr, "vertex", 6) == 0) {
+    if (end - ptr >= 6 && ieq((const uint8_t *)ptr, "vertex", 6)) {
       ptr += 6;
       skip_ws();
       float x = fast_atof(ptr, end);
@@ -731,7 +764,7 @@ static int loadstl_ascii(const uint8_t *data, size_t size, float **vertp,
       }
       continue;
     }
-    if (end - ptr >= 8 && std::memcmp(ptr, "endfacet", 8) == 0) {
+    if (end - ptr >= 8 && ieq((const uint8_t *)ptr, "endfacet", 8)) {
       ptr += 8;
       skip_to_eol();
       if (v_idx == 3) {
@@ -850,7 +883,7 @@ static const uint8_t *find_next_facet(const uint8_t *p, const uint8_t *end) {
       ++q;
     while (q < end && (*q == ' ' || *q == '\t'))
       ++q;
-    if (end - q >= 6 && std::memcmp(q, "facet ", 6) == 0)
+    if (end - q >= 6 && ieq(q, "facet", 5) && is_ws_byte(q[5]))
       return q;
     p = nl + 1;
   }
@@ -884,7 +917,7 @@ static triangle_t parse_ascii_chunk(const uint8_t *p, const uint8_t *pend,
     if (p >= end)
       break;
 
-    if (end - p >= 6 && std::memcmp(p, "vertex", 6) == 0) {
+    if (end - p >= 6 && ieq(p, "vertex", 6)) {
       p += 6;
       while (p < end && (*p == ' ' || *p == '\t'))
         ++p;
@@ -910,7 +943,7 @@ static triangle_t parse_ascii_chunk(const uint8_t *p, const uint8_t *pend,
       }
       continue;
     }
-    if (end - p >= 8 && std::memcmp(p, "endfacet", 8) == 0) {
+    if (end - p >= 8 && ieq(p, "endfacet", 8)) {
       p += 8;
       while (p < end && !is_eol(*p))
         ++p;
