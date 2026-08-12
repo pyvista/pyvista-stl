@@ -46,6 +46,7 @@ def _polydata_from_faces(
 
     """
     try:
+        from pyvista import vtk_version_info
         from pyvista.core.pointset import PolyData
     except ModuleNotFoundError as exc:
         msg = "pyvista_stl.read_as_mesh requires PyVista. Install it with: pip install pyvista"
@@ -67,15 +68,19 @@ def _polydata_from_faces(
         msg = f"Unsupported face dtype {faces.dtype!r}; expected int32 or int64."
         raise TypeError(msg)
 
-    offset = np.arange(0, faces.size + 1, faces.shape[1], dtype=faces.dtype)
-    offset_vtk = numpy_to_vtk(offset, deep=False, array_type=vtk_dtype)
     faces_vtk = numpy_to_vtk(faces.ravel(), deep=False, array_type=vtk_dtype)
 
     carr = vtkCellArray()
-    carr.SetData(offset_vtk, faces_vtk)
+    if vtk_version_info >= (9, 6, 2):
+        carr.SetData(faces.shape[1], faces_vtk)
+    else:
+        offset = np.arange(0, faces.size + 1, faces.shape[1], dtype=faces.dtype)
+        offset_vtk = numpy_to_vtk(offset, deep=False, array_type=vtk_dtype)
+        carr.SetData(offset_vtk, faces_vtk)
+        carr._offset_np_ref = offset_vtk
+
     # Keep references on the cell array so the underlying numpy buffers
     # are not garbage-collected while VTK still holds raw pointers.
-    carr._offset_np_ref = offset_vtk
     carr._faces_np_ref = faces_vtk
 
     pdata = PolyData()

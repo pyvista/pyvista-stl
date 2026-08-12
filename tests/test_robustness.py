@@ -183,7 +183,7 @@ def test_seq_and_mt_agree_on_grid(stl_dir: Path) -> None:
         cells = pts[idx]
         cells = np.sort(cells, axis=1)
         flat = cells.reshape(cells.shape[0], -1)
-        return cells[np.lexsort(flat.T[::-1])]
+        return np.asarray(cells[np.lexsort(flat.T[::-1])])
 
     np.testing.assert_array_equal(_canon(pts_seq, idx_seq), _canon(pts_mt, idx_mt))
 

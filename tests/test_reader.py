@@ -91,6 +91,9 @@ def test_read_as_mesh() -> None:
     assert pv_mesh == stl_mesh
     assert stl_mesh._connectivity_array.dtype == np.int32
 
+    if pv.vtk_version_info >= (9, 6, 2):
+        assert stl_mesh.GetPolys().IsStorageFixedSize()
+
 
 def test_entry_point_registered() -> None:
     """``read_as_mesh`` is advertised on the ``pyvista.readers`` group."""
