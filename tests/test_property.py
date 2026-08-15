@@ -30,7 +30,7 @@ from hypothesis import strategies as st  # noqa: E402
 
 import pyvista_stl  # noqa: E402
 
-from pyvista._vtk import vtkSTLReader  # noqa: E402
+from _helpers import vtk_stl_reader  # noqa: E402
 
 
 # Coordinates we know round-trip exactly through both float32 storage
@@ -89,7 +89,7 @@ def _write_ascii_stl(path: Path, tris: np.ndarray, line_ending: str = "\n") -> N
 
 
 def _vtk_point_set(path: Path) -> np.ndarray:
-    r = vtkSTLReader()
+    r = vtk_stl_reader()
     r.SetFileName(str(path))
     r.Merging = True
     r.Update()

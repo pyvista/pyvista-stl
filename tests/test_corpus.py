@@ -38,9 +38,9 @@ def _vtk_read(path: Path) -> tuple[np.ndarray, int, int, np.ndarray]:
         for set-equality comparison independent of vertex ordering.
     """
     pv = pytest.importorskip("pyvista")
-    from pyvista._vtk import vtkSTLReader
+    from _helpers import vtk_stl_reader
 
-    reader = vtkSTLReader()
+    reader = vtk_stl_reader()
     reader.SetFileName(str(path))
     reader.Merging = True
     reader.Update()

@@ -18,13 +18,13 @@ from pathlib import Path
 
 import pytest
 
-from pyvista._vtk import vtkSTLReader
+from _helpers import vtk_stl_reader
 
 import pyvista_stl
 
 
 def _vtk_counts(path: Path) -> tuple[int, int]:
-    r = vtkSTLReader()
+    r = vtk_stl_reader()
     r.SetFileName(str(path))
     r.Merging = True
     r.Update()
