@@ -47,14 +47,16 @@ def _polydata_from_faces(
     """
     try:
         from pyvista import vtk_version_info
+        from pyvista._vtk import (
+            numpy_to_vtk,
+            vtkCellArray,
+            vtkTypeInt32Array,
+            vtkTypeInt64Array,
+        )
         from pyvista.core.pointset import PolyData
     except ModuleNotFoundError as exc:
         msg = "pyvista_stl.read_as_mesh requires PyVista. Install it with: pip install pyvista"
         raise ModuleNotFoundError(msg) from exc
-
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-    from vtkmodules.vtkCommonCore import vtkTypeInt32Array, vtkTypeInt64Array
-    from vtkmodules.vtkCommonDataModel import vtkCellArray
 
     if faces.ndim != 2:
         msg = f"Expected a 2-D face array, got shape {faces.shape!r}."

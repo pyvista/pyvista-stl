@@ -30,7 +30,7 @@ from hypothesis import strategies as st  # noqa: E402
 
 import pyvista_stl  # noqa: E402
 
-from vtkmodules.vtkIOGeometry import vtkSTLReader  # noqa: E402
+from pyvista._vtk import vtkSTLReader  # noqa: E402
 
 
 # Coordinates we know round-trip exactly through both float32 storage

@@ -73,7 +73,7 @@ def stl_example(request: pytest.FixtureRequest) -> str:
 
 def _vtk_polydata(path: str) -> Any:
     """Read with VTK's STL reader, used as the ground-truth oracle."""
-    from vtkmodules.vtkIOGeometry import vtkSTLReader
+    from pyvista._vtk import vtkSTLReader
 
     reader = vtkSTLReader()
     reader.SetFileName(path)

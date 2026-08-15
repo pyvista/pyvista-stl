@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from vtkmodules.vtkIOGeometry import vtkSTLReader
+from pyvista._vtk import vtkSTLReader
 
 import pyvista_stl
 
