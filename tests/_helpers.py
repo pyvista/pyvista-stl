@@ -2,8 +2,34 @@
 
 import struct
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+
+
+def vtk_stl_reader() -> Any:
+    """Return a fresh ``vtkSTLReader``, used across the suite as an oracle.
+
+    The reader has to come from the same VTK build PyVista runs against.
+    PyVista may sit on stock ``vtkmodules`` or on the ``cvista`` fork, and
+    output from the wrong one is a foreign type PyVista refuses to wrap.
+    Resolving through ``pyvista._vtk`` follows whichever it picked.
+
+    Returns
+    -------
+    vtkSTLReader
+        A new reader instance. Callers set ``Merging`` and the file name.
+
+    """
+    try:
+        from pyvista._vtk import vtkSTLReader
+    except ImportError:
+        # PyVista older than 0.49 does not re-export the IO readers, but it
+        # also predates backend selection and so always runs on stock
+        # vtkmodules. Importing that directly cannot pull in a second VTK.
+        from vtkmodules.vtkIOGeometry import vtkSTLReader
+
+    return vtkSTLReader()
 
 
 def write_binary_stl(
