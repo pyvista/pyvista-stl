@@ -15,3 +15,5 @@ Makefile
 cmake_install.cmake
 compile_commands.json
 .cache/
+# Hypothesis example database and constants cache
+.hypothesis/
