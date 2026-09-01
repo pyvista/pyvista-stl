@@ -102,14 +102,20 @@ To get a ``pyvista.PolyData`` directly:
      Z Bounds:   -5.551e-17, 5.551e-17
      N Arrays:   0
 
-With ``pyvista >= 0.48`` installed, ``pyvista.read`` automatically
-dispatches ``.stl`` files to ``pyvista_stl`` via the ``pyvista.readers``
-entry point:
+With ``pyvista >= 0.49`` installed, ``pyvista.read`` automatically
+dispatches ``.stl`` files to ``pyvista_stl`` via the
+``pyvista.readers.override`` entry point:
 
 .. code:: pycon
 
    >>> import pyvista as pv
    >>> mesh = pv.read("example.stl")  # uses pyvista_stl
+
+PyVista reads ``.stl`` natively, so this entry point replaces a built-in
+reader and is declared in the ``pyvista.readers.override`` group, which
+states that intent. On ``pyvista`` 0.48 the group is unknown and
+ignored: ``pyvista.read`` keeps using the built-in STL reader, and
+``pyvista_stl.read_as_mesh`` can still be called directly.
 
 ************
  Benchmarks
