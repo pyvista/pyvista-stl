@@ -17,9 +17,11 @@ try:
 
     PYVISTA_INSTALLED = True
     _HAS_READER_REGISTRY = Version(pv.__version__) >= Version("0.48.dev0")
+    _HAS_READER_OVERRIDE = Version(pv.__version__) >= Version("0.49.dev0")
 except ImportError:
     PYVISTA_INSTALLED = False
     _HAS_READER_REGISTRY = False
+    _HAS_READER_OVERRIDE = False
 
 THIS_PATH = os.path.dirname(os.path.abspath(__file__))
 TEST_FILE_ASCII = os.path.join(THIS_PATH, "sphere_ascii.stl")
@@ -96,8 +98,8 @@ def test_read_as_mesh() -> None:
 
 
 def test_entry_point_registered() -> None:
-    """``read_as_mesh`` is advertised on the ``pyvista.readers`` group."""
-    matches = [ep for ep in entry_points(group="pyvista.readers") if ep.name == ".stl"]
+    """``read_as_mesh`` is advertised on the ``pyvista.readers.override`` group."""
+    matches = [ep for ep in entry_points(group="pyvista.readers.override") if ep.name == ".stl"]
     assert matches, "pyvista_stl did not publish a '.stl' entry point"
     assert matches[0].value == "pyvista_stl:read_as_mesh"
     assert matches[0].load() is pyvista_stl.read_as_mesh
@@ -114,9 +116,14 @@ def test_read_raises_for_remote_uri(func: Callable[[str], Any]) -> None:
         func("https://example.com/mesh.stl")
 
 
+def test_stl_is_not_claimed_in_the_plain_group() -> None:
+    """The plain group refuses an extension PyVista reads natively."""
+    assert not [ep for ep in entry_points(group="pyvista.readers") if ep.name == ".stl"]
+
+
 @pytest.mark.skipif(
-    not _HAS_READER_REGISTRY,
-    reason="requires pyvista >= 0.48 reader registry",
+    not _HAS_READER_OVERRIDE,
+    reason="requires pyvista >= 0.49 reader override group",
 )
 def test_pv_read_dispatches_to_entry_point() -> None:
     """``pv.read('*.stl')`` resolves to ``pyvista_stl.read_as_mesh`` via the registry."""
