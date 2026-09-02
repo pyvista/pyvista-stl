@@ -45,7 +45,7 @@ Repository = "https://github.com/pyvista/pyvista-stl"
 
 [tool.cibuildwheel]
 archs = ["auto64"]  # 64-bit only
-build = "cp310-* cp311-* cp312-* cp313-* cp314*"
+build = "cp310-* cp311-* cp312-*"  # cp312 is abi3 and covers every later 3.x
 skip = " cp314t-* *musllinux*"  # disable musl-based wheels and free threading
 test-command = "pytest {project}/tests"
 test-requires = "pytest pyvista"
@@ -89,6 +89,7 @@ build-dir = "build/{wheel_tag}"
 minimum-version = "0.10"
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.exclude = [".github", "*.png", "tests", ".mypy_cache", ".pre-commit-config.yaml", "*_cache", "CONTRIBUTING.md", ".gitignore"]
+wheel.py-api = "cp312"  # nanobind builds STABLE_ABI; one wheel serves 3.12 and later
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"
